@@ -1,0 +1,162 @@
+
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/teams-file-organizer/app/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Team {
+  id          String @id @default(cuid())
+  teamId      String @unique // Microsoft Teams ID
+  displayName String
+  description String?
+  webUrl      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  channels    Channel[]
+  files       File[]
+  
+  @@map("teams")
+}
+
+model Channel {
+  id          String @id @default(cuid())
+  channelId   String @unique // Microsoft Teams Channel ID
+  displayName String
+  description String?
+  webUrl      String?
+  teamId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  team        Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  files       File[]
+  
+  @@map("channels")
+}
+
+enum FileCategory {
+  OPERATIONS
+  ESTIMATING
+  ACCOUNTING
+  FINANCE
+  MARKETING
+  OFFICE
+  UNCATEGORIZED
+}
+
+enum FileStatus {
+  DISCOVERED
+  CATEGORIZED
+  ORGANIZED
+  ERROR
+}
+
+model File {
+  id              String @id @default(cuid())
+  fileId          String @unique // Microsoft Graph File ID
+  name            String
+  size            BigInt
+  mimeType        String
+  extension       String?
+  webUrl          String
+  downloadUrl     String?
+  parentPath      String
+  relativePath    String
+  
+  // Categorization
+  category        FileCategory @default(UNCATEGORIZED)
+  confidence      Float @default(0.0)
+  isManuallySet   Boolean @default(false)
+  
+  // Status and organization
+  status          FileStatus @default(DISCOVERED)
+  organizedPath   String?
+  organizedAt     DateTime?
+  
+  // Metadata
+  createdAt       DateTime @default(now())
+  modifiedAt      DateTime
+  lastScannedAt   DateTime @default(now())
+  
+  // Relations
+  teamId          String?
+  channelId       String?
+  team            Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  channel         Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  
+  // History and learning
+  categorizations CategorizationHistory[]
+  
+  @@map("files")
+}
+
+model CategorizationHistory {
+  id          String @id @default(cuid())
+  fileId      String
+  oldCategory FileCategory?
+  newCategory FileCategory
+  confidence  Float @default(0.0)
+  isManual    Boolean @default(false)
+  reason      String?
+  createdAt   DateTime @default(now())
+  
+  file        File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  
+  @@map("categorization_history")
+}
+
+model CategorizationRule {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  pattern     String // Regex or keyword pattern
+  category    FileCategory
+  priority    Int @default(0)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("categorization_rules")
+}
+
+model ScanSession {
+  id          String @id @default(cuid())
+  status      String // RUNNING, COMPLETED, FAILED
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  filesFound  Int @default(0)
+  filesProcessed Int @default(0)
+  errors      Json?
+  
+  @@map("scan_sessions")
+}
+
+model ActivityLog {
+  id          String @id @default(cuid())
+  action      String
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  
+  @@map("activity_logs")
+}
+
+model AppSettings {
+  id          String @id @default(cuid())
+  key         String @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  
+  @@map("app_settings")
+}
