@@ -1,0 +1,283 @@
+
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/teams-file-organizer/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Team {
+  id          String @id @default(cuid())
+  teamId      String @unique // Microsoft Teams ID
+  displayName String
+  description String?
+  webUrl      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  channels    Channel[]
+  files       File[]
+  
+  @@map("teams")
+}
+
+model Channel {
+  id          String @id @default(cuid())
+  channelId   String @unique // Microsoft Teams Channel ID
+  displayName String
+  description String?
+  webUrl      String?
+  teamId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  team        Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  files       File[]
+  
+  @@map("channels")
+}
+
+enum FileCategory {
+  OPERATIONS
+  ESTIMATING
+  ACCOUNTING
+  FINANCE
+  OFFICE
+  COMPANY_LAYOUT
+  UNCATEGORIZED
+}
+
+enum FileStatus {
+  DISCOVERED
+  CATEGORIZED
+  ORGANIZED
+  ERROR
+}
+
+model File {
+  id              String @id @default(cuid())
+  fileId          String @unique // Microsoft Graph File ID
+  name            String
+  size            BigInt
+  mimeType        String
+  extension       String?
+  webUrl          String
+  downloadUrl     String?
+  parentPath      String
+  relativePath    String
+  
+  // Categorization
+  category        FileCategory @default(UNCATEGORIZED)
+  confidence      Float @default(0.0)
+  isManuallySet   Boolean @default(false)
+  
+  // Status and organization
+  status          FileStatus @default(DISCOVERED)
+  organizedPath   String?
+  organizedAt     DateTime?
+  
+  // Metadata
+  createdAt       DateTime @default(now())
+  modifiedAt      DateTime
+  lastScannedAt   DateTime @default(now())
+  
+  // Relations
+  teamId          String?
+  channelId       String?
+  team            Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  channel         Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  
+  // History and learning
+  categorizations CategorizationHistory[]
+  
+  // Enhanced relations
+  contentAnalysis  FileContentAnalysis?
+  fileActions      FileAction[]
+  manualCategorizations ManualCategorization[]
+  
+  @@map("files")
+}
+
+model CategorizationHistory {
+  id          String @id @default(cuid())
+  fileId      String
+  oldCategory FileCategory?
+  newCategory FileCategory
+  confidence  Float @default(0.0)
+  isManual    Boolean @default(false)
+  reason      String?
+  createdAt   DateTime @default(now())
+  
+  file        File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  
+  @@map("categorization_history")
+}
+
+model CategorizationRule {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  pattern     String // Regex or keyword pattern
+  category    FileCategory
+  priority    Int @default(0)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("categorization_rules")
+}
+
+model ScanSession {
+  id          String @id @default(cuid())
+  status      String // RUNNING, COMPLETED, FAILED
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  filesFound  Int @default(0)
+  filesProcessed Int @default(0)
+  errors      Json?
+  
+  @@map("scan_sessions")
+}
+
+model ActivityLog {
+  id          String @id @default(cuid())
+  action      String
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  
+  @@map("activity_logs")
+}
+
+model AppSettings {
+  id          String @id @default(cuid())
+  key         String @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  
+  @@map("app_settings")
+}
+
+// User Management and Roles
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+  VIEWER
+}
+
+enum Department {
+  OPERATIONS
+  ESTIMATING
+  ACCOUNTING
+  FINANCE
+  OFFICE
+  COMPANY_LAYOUT
+  ALL_DEPARTMENTS
+}
+
+model User {
+  id              String @id @default(cuid())
+  email           String @unique
+  name            String
+  role            UserRole @default(USER)
+  department      Department @default(ALL_DEPARTMENTS)
+  isActive        Boolean @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  fileActions     FileAction[]
+  categorizations ManualCategorization[]
+  
+  @@map("users")
+}
+
+// Enhanced File Content Analysis
+model FileContentAnalysis {
+  id              String @id @default(cuid())
+  fileId          String @unique
+  extractedText   String?
+  summary         String?
+  keywords        String[]
+  entities        Json? // Named entities, dates, amounts, etc.
+  contentType     String? // document, spreadsheet, presentation, etc.
+  language        String?
+  confidence      Float @default(0.0)
+  aiModel         String? // Which AI model was used
+  analyzedAt      DateTime @default(now())
+  
+  file            File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  
+  @@map("file_content_analysis")
+}
+
+// Enhanced Keywords and Smart Scanning
+model DepartmentKeyword {
+  id          String @id @default(cuid())
+  keyword     String
+  department  Department
+  weight      Float @default(1.0)
+  isActive    Boolean @default(true)
+  source      String? // manual, learned, ai_suggested
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([keyword, department])
+  @@map("department_keywords")
+}
+
+// Manual Categorization Tracking
+model ManualCategorization {
+  id          String @id @default(cuid())
+  fileId      String
+  userId      String
+  oldCategory FileCategory?
+  newCategory FileCategory
+  reason      String?
+  confidence  Float @default(1.0)
+  createdAt   DateTime @default(now())
+  
+  file        File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("manual_categorizations")
+}
+
+// File Actions and User Activity
+model FileAction {
+  id          String @id @default(cuid())
+  fileId      String
+  userId      String
+  action      String // VIEW, DOWNLOAD, CATEGORIZE, ORGANIZE, etc.
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  
+  file        File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("file_actions")
+}
+
+// AI Content Analysis Jobs
+model ContentAnalysisJob {
+  id          String @id @default(cuid())
+  fileId      String
+  status      String // PENDING, PROCESSING, COMPLETED, FAILED
+  jobType     String // FULL_ANALYSIS, KEYWORD_EXTRACTION, SUMMARY, etc.
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  error       String?
+  result      Json?
+  
+  @@map("content_analysis_jobs")
+}
